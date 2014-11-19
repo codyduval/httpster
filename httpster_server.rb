@@ -26,8 +26,11 @@ class Httpster
     puts "Connecting on port #{@port}"
     loop do
       socket = @server.accept
-      request_line = socket.gets
-      STDERR.puts request_line
+      request = ""
+      while request_line = socket.gets
+        request += request_line
+      end
+      STDERR.puts request
 
       http_verb = request_line.split(" ").first
 
@@ -35,14 +38,58 @@ class Httpster
         get(request_line, socket)
       elsif http_verb == 'POST'
         post(request_line, socket)
+      elsif http_verb == 'PUT'
+        put(request_line, socket)
+      elsif http_verb == 'DELETE'
+        delete(request_line, socket)
+      elsif http_verb == 'HEAD'
+        head(request_line, socket)
       end
     end
   end
 
   private
+  
+  def head(request_line, socket)
+    path = requested_file(request_line) if request_line 
+
+    if File.directory?(path)
+      path = File.join(path, 'index.html')
+    end
+
+    # Make sure the file exists and is not a directory
+    # before attempting to open it.
+    if File.exist?(path) && !File.directory?(path)
+      File.open(path, "rb") do |file|
+        socket.print "HTTP/1.1 200 OK\r\n" +
+                     "Content-Type: #{content_type(file)}\r\n" +
+                     "Content-Length: #{file.size}\r\n" +
+                     "Connection: close\r\n"
+
+        socket.print "\r\n"
+      end
+    else
+      message = "File not found\n"
+
+      # respond with a 404 error code to indicate the file does not exist
+      socket.print "HTTP/1.1 404 Not Found\r\n" +
+                   "Content-Type: text/plain\r\n" +
+                   "Content-Length: #{message.size}\r\n" +
+                   "Connection: close\r\n"
+
+      socket.print "\r\n"
+
+      socket.print message
+    end
+  end
 
   def post(request_line, socket)
-    STDERR.puts request_line
+    socket.print "HTTP/1.1 200 OK\r\n" +
+                 "Content-Type: #{content_type(file)}\r\n" +
+                 "Content-Length: #{file.size}\r\n" +
+                 "Connection: close\r\n"
+
+    socket.print "\r\n"
   end
 
   def get(request_line, socket)
