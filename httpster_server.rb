@@ -15,35 +15,61 @@ class Httpster
 
   DEFAULT_CONTENT_TYPE = 'application/octet-stream'
 
-
   def initialize(port=2000)
     @port = port
     @server = TCPServer.open(port)
   end
 
+  def verb_and_header(socket)
+    request = ""
+    headers = {}
+    while (request_line = socket.gets and request_line != "\r\n")
+      request += request_line
+    end
+
+    header_params = request.split(/\r?\n/)
+    first_line = header_params.shift.split(" ")
+    verb = first_line[0]
+    request_uri = first_line[1]
+    header_params.each do |param|
+      key_value = param.split(':')
+      headers.merge!(key_value[0] => key_value[1].strip)
+    end
+    {:verb => verb, :request_uri => request_uri, :headers => headers}
+  end
+
+  def body(socket, content_length)
+    socket.readpartial(content_length)  
+  end
 
   def run
     puts "Connecting on port #{@port}"
+
     loop do
       socket = @server.accept
-      request = ""
-      while request_line = socket.gets
-        request += request_line
-      end
-      STDERR.puts request
+      request = verb_and_header(socket)
+      STDERR.puts request 
 
-      http_verb = request_line.split(" ").first
+      http_verb = request[:verb]
+      request_uri = request[:request_uri]
+      headers = request[:headers]
+
+      if headers.has_key? 'Content-Length'
+        http_body = body(socket, headers['Content-Length'].to_i)
+        headers['Body'] = http_body
+        STDERR.puts http_body 
+      end
 
       if http_verb == 'GET'
-        get(request_line, socket)
+        get(request_uri, socket)
       elsif http_verb == 'POST'
-        post(request_line, socket)
+        #post(request, socket)
       elsif http_verb == 'PUT'
-        put(request_line, socket)
+        #put(request, socket)
       elsif http_verb == 'DELETE'
-        delete(request_line, socket)
+        #delete(request, socket)
       elsif http_verb == 'HEAD'
-        head(request_line, socket)
+        #head(request, socket)
       end
     end
   end
@@ -83,7 +109,7 @@ class Httpster
     end
   end
 
-  def post(request_line, socket)
+  def post(request, socket)
     socket.print "HTTP/1.1 200 OK\r\n" +
                  "Content-Type: #{content_type(file)}\r\n" +
                  "Content-Length: #{file.size}\r\n" +
@@ -92,8 +118,8 @@ class Httpster
     socket.print "\r\n"
   end
 
-  def get(request_line, socket)
-    path = requested_file(request_line) if request_line 
+  def get(request_uri, socket)
+    path = requested_file(request_uri) 
 
     if File.directory?(path)
       path = File.join(path, 'index.html')
@@ -134,9 +160,8 @@ class Httpster
   end
 
   #Borrowed from rack 'cause its safe
-  def requested_file(request_line)
-    request_uri  = request_line.split(" ")[1]
-    path         = URI.unescape(URI(request_uri).path)
+  def requested_file(request_uri)
+    path = URI.unescape(URI(request_uri).path)
 
     clean = []
 
